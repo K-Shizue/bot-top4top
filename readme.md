@@ -33,6 +33,8 @@ Discord bot that extracts audio from YouTube, TikTok, SoundCloud, and Spotify, e
 
 All interaction replies and deferred responses use message flag `32768` (`MessageFlags.IsComponentsV2`). The message payload structure consists of:
 
+> **Important:** the flag must be present on **every** payload, including each `editReply`. Discord validates an edit against the flags carried by that payload, not the original `deferReply`. Omitting it produces `Invalid Form Body — components[0][UNION_TYPE_CHOICES]: Value of field "type" must be one of (1,)`, because a Container (`type: 17`) is not valid in a classic message. `convertFlow.v2()` wraps all conversion payloads so the flag can never be forgotten.
+
 1. **Container (`type: 17`):**
    - Border accent color based on state:
      - Blue (`0x3498db`): Processing & stream resolution
@@ -154,7 +156,6 @@ The public panel has two buttons:
 - Manual trigger: `/setup panel` → **Panel Management** → **yt-dlp status**.
 
 ## Top4Top HTTP Links
-
 Top4Top results are normalized to `http://` before being shown to users, because SA-MP clients only play HTTP audio streams.
 
 - `Top4TopUploader.normalizeTop4TopUrl()` rewrites only the protocol (`https:` → `http:`), case-insensitively.
@@ -194,6 +195,7 @@ converter_t4top/
 │   ├── payloadcheck.js     # Components V2 payload construction
 │   ├── interactioncheck.js # Button/select/modal routing with mocked interactions
 │   ├── convertcheck.js     # Shared conversion pipeline with stubbed downloader/uploader
+│   ├── convertmodalcheck.js # Panel Convert modal: single ack, V2 flags on every edit
 │   ├── updatecheck.js      # Top4Top HTTP normalization + streaming presence
 │   └── uploadercheck.js    # Uploader returns http links end-to-end
 └── src/

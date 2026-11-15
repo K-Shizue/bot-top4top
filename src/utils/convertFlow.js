@@ -7,11 +7,18 @@ const {
     ActionRowBuilder,
     ButtonBuilder,
     ButtonStyle,
+    MessageFlags,
 } = require('discord.js');
 const MusicDownloader = require('../utils/downloader');
 const Top4TopUploader = require('../utils/uploader');
 
 const SUPPORTED = /^https?:\/\/([\w-]+\.)*(youtube\.com|youtu\.be|tiktok\.com|soundcloud\.com|spotify\.com)\//i;
+
+// Discord validates an edit payload against the flags carried by that payload,
+// so every V2 payload must restate IsComponentsV2, not just the initial defer.
+function v2(components) {
+    return { flags: MessageFlags.IsComponentsV2, components };
+}
 
 function validateUrl(url) {
     if (typeof url !== 'string' || !url.trim()) throw new Error('Please provide an audio URL.');
@@ -46,7 +53,7 @@ async function runConversion(interaction, rawUrl, { accentColor = 0x3498db } = {
             '🔎 **Status:** Searching metadata & resolving audio stream...\n' +
             '📡 **Connection:** Connecting to media servers...',
         ));
-    await interaction.editReply({ components: [processing] });
+    await interaction.editReply(v2([processing]));
 
     const { filePath, title, duration, uploader, fileSize, thumbnail } = await MusicDownloader.downloadAudio(url);
 
@@ -66,7 +73,7 @@ async function runConversion(interaction, rawUrl, { accentColor = 0x3498db } = {
         `**📦 File Size:** \`${sizeStr}\`\n\n` +
         '🚀 **Status:** Converting to MP3 and uploading to Top4Top servers...',
     ));
-    await interaction.editReply({ components: [uploading] });
+    await interaction.editReply(v2([uploading]));
 
     let downloadLink;
     try {
@@ -98,19 +105,17 @@ async function runConversion(interaction, rawUrl, { accentColor = 0x3498db } = {
                 .setEmoji('🔗'),
         ));
 
-    await interaction.editReply({ components: [success] });
+    await interaction.editReply(v2([success]));
 }
 
 function errorPayload(message, accentColor = 0xe74c3c) {
-    return {
-        components: [new ContainerBuilder()
-            .setAccentColor(accentColor)
-            .addTextDisplayComponents(new TextDisplayBuilder().setContent('## ❌ Processing Failed'))
-            .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
-            .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-                `An error occurred while processing the request:\n\`\`\`\n${String(message).slice(0, 1500)}\n\`\`\``,
-            ))],
-    };
+    return v2([new ContainerBuilder()
+        .setAccentColor(accentColor)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent('## ❌ Processing Failed'))
+        .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+            `An error occurred while processing the request:\n\`\`\`\n${String(message).slice(0, 1500)}\n\`\`\``,
+        ))]);
 }
 
-module.exports = { runConversion, validateUrl, errorPayload, SUPPORTED };
+module.exports = { runConversion, validateUrl, errorPayload, SUPPORTED, v2 };
