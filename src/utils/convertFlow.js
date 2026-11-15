@@ -53,15 +53,16 @@ function formatSize(fileSize) {
 }
 
 // Success layout is shared by the reply and the history channel.
+// Accent is intentionally white; the link stays raw text so it can be copied.
 function successContainer({ title, artist, duration, fileSize, url }, e) {
     return new ContainerBuilder()
-        .setAccentColor(0x2ecc71)
+        .setAccentColor(0xffffff)
         .addTextDisplayComponents(new TextDisplayBuilder().setContent(
             `${e('title')} **Title:** \`${title}\`\n\n` +
             `${e('artist')} **Artist / Uploader:** \`${artist}\`\n\n` +
             `${e('duration')} **Duration:** \`${formatDuration(duration)}\`\n\n` +
             `${e('size')} **Size:** \`${formatSize(fileSize)}\`\n\n` +
-            `${e('link')} **Direct Download Link:** [Top4Top Direct Link](${url})\n\n` +
+            `${e('link')} **Direct Download Link:**\n${url}\n\n` +
             'Uploaded via Mila Bot',
         ));
 }

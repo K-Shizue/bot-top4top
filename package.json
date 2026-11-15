@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node test/selfcheck.js && node test/payloadcheck.js && node test/interactioncheck.js && node test/historycheck.js && node test/emojicheck.js && node test/successcheck.js && node test/convertcheck.js && node test/convertmodalcheck.js && node test/updatecheck.js && node test/uploadercheck.js"
+    "test": "node test/selfcheck.js && node test/payloadcheck.js && node test/interactioncheck.js && node test/historycheck.js && node test/emojicheck.js && node test/successcheck.js && node test/uploadcmdcheck.js && node test/convertcheck.js && node test/convertmodalcheck.js && node test/updatecheck.js && node test/uploadercheck.js"
   },
   "dependencies": {
     "axios": "^1.6.8",

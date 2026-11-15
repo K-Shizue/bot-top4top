@@ -59,7 +59,8 @@ const Top4TopUploader = require('../src/utils/uploader');
 
     await flow.runConversion(interaction, 'https://youtu.be/abc');
     const final = JSON.stringify(edits[edits.length - 1]);
-    assert.match(final, /\(http:\/\/top4top\.io\/p_9999abc\/file\.mp3\?dl=1\)/, 'panel/upload reply must show the http link');
+    assert.match(final, /http:\/\/top4top\.io\/p_9999abc\/file\.mp3\?dl=1/, 'raw http link must be shown');
+    assert.ok(!/\]\(http/.test(final), 'must not use a masked hyperlink');
     assert.ok(!final.includes('https://top4top.io'), 'reply must not contain an https Top4Top link');
 
     console.log('uploader check: all assertions passed');

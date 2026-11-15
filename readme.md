@@ -254,14 +254,18 @@ All conversion flows share `convertFlow.js`, so `/upload` and the panel **Conver
 👤 Artist / Uploader: `Artist`
 ⏱️ Duration: `03:12`
 📦 Size: `4.20 MB`
-🔗 Direct Download Link: [Top4Top Direct Link](http://top4top.io/...)
+🔗 Direct Download Link:
+http://top4top.io/...
 Uploaded via Mila Bot
 ```
 
-- Components V2 Container with the green success accent.
-- No thumbnail / MediaGallery.
-- No "Download Audio File" button — the clickable markdown link is the only download path.
+- `/upload` is **ephemeral**: `deferReply` sets `IsComponentsV2 | Ephemeral` from the first acknowledgement, so every `editReply` (processing, uploading, success, and errors) is only visible to the user who ran the command.
+- Exactly one acknowledgement per interaction; no public `reply`/`followUp` for `/upload`.
+- Components V2 Container with a **white** accent (`#FFFFFF`). Dashboard, panel, and history colors are unchanged.
+- The download URL is rendered as **raw text on its own line** — no Markdown hyperlink and no labeled/masked link, so it can be selected and copied. Discord may auto-linkify the plain URL; that is normal.
+- No thumbnail / MediaGallery, and no "Download Audio File" button.
 - The Top4Top HTTP normalization and MP3 192 kbps pipeline are unchanged.
+- The panel **Convert** button keeps its existing public reply behaviour; only the `/upload` command is ephemeral.
 
 ## Global Cookies
 
@@ -352,6 +356,7 @@ converter_t4top/
 │   ├── historycheck.js     # Upload history persistence + concurrency
 │   ├── emojicheck.js       # Emoji parse/validate/render + per-guild storage
 │   ├── successcheck.js     # Success layout + history channel delivery
+│   ├── uploadcmdcheck.js   # /upload ephemeral ack, white accent, raw URL
 │   ├── convertcheck.js     # Shared conversion pipeline with stubbed downloader/uploader
 │   ├── convertmodalcheck.js # Panel Convert modal: single ack, V2 flags on every edit
 │   ├── updatecheck.js      # Top4Top HTTP normalization + streaming presence

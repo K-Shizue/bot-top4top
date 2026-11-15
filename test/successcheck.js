@@ -33,12 +33,14 @@ assert.strictEqual(formatSize(4.2 * 1024 * 1024), '4.20 MB');
 const json = successContainer(entry, e).toJSON();
 const text = JSON.stringify(json);
 assert.strictEqual(json.type, 17, 'root remains a Container');
-assert.strictEqual(json.accent_color, 0x2ecc71, 'accent color preserved');
+assert.strictEqual(json.accent_color, 0xffffff, 'success accent must stay white (#FFFFFF)');
 assert.match(text, /My Song/);
 assert.match(text, /My Artist/);
 assert.match(text, /03:12/);
 assert.match(text, /4\.20 MB/);
-assert.match(text, /\[Top4Top Direct Link\]\(http:\/\/top4top\.io\/p_abc\/file\.mp3\)/, 'link must be clickable markdown');
+assert.match(text, /http:\/\/top4top\.io\/p_abc\/file\.mp3/, 'raw Top4Top URL must be present');
+assert.ok(!/\]\(http/.test(text), 'must not use masked Markdown hyperlinks');
+assert.ok(!/Top4Top Direct Link\]\(/.test(text), 'must not hide the URL behind a label');
 assert.match(text, /Uploaded via Mila Bot/);
 assert.ok(!/Download Audio File/.test(text), 'download button must be gone');
 assert.strictEqual(json.components.some(c => c.type === 1), false, 'no ActionRow in success message');
@@ -82,7 +84,9 @@ assert.match(custom, /✨ \*\*Title:\*\*/);
     assert.match(body, /My Song - My Artist/);
     assert.match(body, /<@42>/);
     assert.match(body, /http:\/\/top4top\.io\/p_abc\/file\.mp3/);
-    assert.strictEqual(sent[0].flags, 32768, 'history message uses Components V2');
+    assert.ok(!/\]\(http/.test(body), 'history message must not use a masked hyperlink');
+    assert.strictEqual(sent[0].flags, 32768, 'history message stays public Components V2 (no Ephemeral)');
+    assert.strictEqual(sent[0].flags & 64, 0, 'history message must not be ephemeral');
 
     // channel deleted -> upload path survives
     const missing = { channels: { fetch: async () => null }, emojis: { cache: { get: () => undefined } } };

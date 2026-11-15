@@ -303,7 +303,7 @@ function emojiSettingsPayload(config, client, { preview = null } = {}) {
             `${emoji.render(client, { emojis: current }, 'artist')} **Artist / Uploader:** \`Artist\`\n\n` +
             `${emoji.render(client, { emojis: current }, 'duration')} **Duration:** \`03:12\`\n\n` +
             `${emoji.render(client, { emojis: current }, 'size')} **Size:** \`4.20 MB\`\n\n` +
-            `${emoji.render(client, { emojis: current }, 'link')} **Direct Download Link:** [Top4Top Direct Link](http://top4top.io/example.mp3)\n\n` +
+            `${emoji.render(client, { emojis: current }, 'link')} **Direct Download Link:**\nhttp://top4top.io/example.mp3\n\n` +
             `${emoji.render(client, { emojis: current }, 'success')} **Upload Success**`,
         ));
 

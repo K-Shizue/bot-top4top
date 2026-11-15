@@ -13,7 +13,9 @@ module.exports = {
                 .setRequired(true)),
 
     async execute(interaction) {
-        await interaction.deferReply({ flags: MessageFlags.IsComponentsV2 });
+        // Ephemeral from the first acknowledgement: the deferred reply and every
+        // later editReply inherit "Only you can see this".
+        await interaction.deferReply({ flags: MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral });
         const url = interaction.options.getString('url');
         const config = interaction.guildId ? get(interaction.guildId) : null;
 
