@@ -8,11 +8,14 @@ const {
     ButtonBuilder,
     ButtonStyle,
     StringSelectMenuBuilder,
+    ChannelSelectMenuBuilder,
+    ChannelType,
     ModalBuilder,
     TextInputBuilder,
     TextInputStyle,
     MessageFlags,
 } = require('discord.js');
+const emoji = require('./emoji');
 
 const PANEL_FLAGS = MessageFlags.IsComponentsV2;
 
@@ -148,7 +151,8 @@ function dashboardPayload(config, category = 'general') {
             `**Title:** ${config.title}\n` +
             `**Accent:** \`${config.accentColor}\`\n` +
             `**Banner:** ${config.bannerUrl ? 'set' : 'not set'} • **Thumbnail:** ${config.thumbnailUrl ? 'set' : 'not set'}\n` +
-            `**Deployed panel:** ${config.panelChannelId ? `<#${config.panelChannelId}>` : 'not deployed'}\n\n` +
+            `**Deployed panel:** ${config.panelChannelId ? `<#${config.panelChannelId}>` : 'not deployed'}\n` +
+            `**History channel:** ${config.historyChannelId ? `<#${config.historyChannelId}>` : 'not configured'}\n\n` +
             `**Section:** ${cat.label} — ${cat.description}`,
         ));
 
@@ -168,10 +172,15 @@ function dashboardPayload(config, category = 'general') {
         .setLabel(FIELD_LABELS[key] || key)
         .setStyle(ButtonStyle.Secondary));
 
+    if (category === 'appearance') {
+        buttons.push(new ButtonBuilder().setCustomId('setup:emojis').setLabel('Emoji Settings').setStyle(ButtonStyle.Primary));
+    }
+
     if (category === 'manage') {
         buttons.push(
             new ButtonBuilder().setCustomId('setup:preview').setLabel('Preview').setStyle(ButtonStyle.Primary),
             new ButtonBuilder().setCustomId('setup:deploy').setLabel('Deploy / Update').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('setup:channel').setLabel('History Channel').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('setup:reset').setLabel('Reset').setStyle(ButtonStyle.Danger),
             new ButtonBuilder().setCustomId('setup:ytdlp').setLabel('yt-dlp status').setStyle(ButtonStyle.Secondary),
         );
@@ -198,6 +207,137 @@ function fieldModal(config, key) {
     if (key.endsWith('ButtonStyle')) input.setPlaceholder('1 = Primary, 2 = Secondary, 3 = Success, 4 = Danger');
     if (key === 'convertButtonEmoji' || key === 'panelButtonEmoji') input.setPlaceholder('Leave empty to remove the emoji');
     modal.addComponents(new ActionRowBuilder().addComponents(input));
+    return modal;
+}
+
+function channelSelectRow(customId, placeholder = 'Select a text channel') {
+    const select = new ChannelSelectMenuBuilder()
+        .setCustomId(customId)
+        .setPlaceholder(placeholder)
+        .setChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement)
+        .setMinValues(1)
+        .setMaxValues(1);
+    return new ActionRowBuilder().addComponents(select);
+}
+
+// `/setup channel` dashboard: pick, save, update, disable the history channel.
+function historyChannelPayload(config, { selectedId = null } = {}) {
+    const active = config.historyChannelId;
+    const container = new ContainerBuilder()
+        .setAccentColor(accent(config))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 📥 Upload History Channel'))
+        .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+            `**Active channel:** ${active ? `<#${active}>` : 'not configured'}\n` +
+            `**Pending selection:** ${selectedId ? `<#${selectedId}>` : 'none'}\n\n` +
+            'Every successful upload posts one message to the active channel. ' +
+            'Uploads still work normally when no channel is configured.',
+        ))
+        .addActionRowComponents(channelSelectRow('setup:channel:select'))
+        .addActionRowComponents(new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('setup:channel:save')
+                .setLabel('Save')
+                .setStyle(ButtonStyle.Success)
+                .setDisabled(!selectedId),
+            new ButtonBuilder()
+                .setCustomId('setup:channel:update')
+                .setLabel('Update')
+                .setStyle(ButtonStyle.Primary)
+                .setDisabled(!active),
+            new ButtonBuilder()
+                .setCustomId('setup:channel:disable')
+                .setLabel('Disable')
+                .setStyle(ButtonStyle.Danger)
+                .setDisabled(!active),
+        ));
+    return { flags: PANEL_FLAGS | MessageFlags.Ephemeral, components: [container] };
+}
+
+// Deploy flow step 1: choose the target channel.
+function deploySelectPayload(config) {
+    const container = new ContainerBuilder()
+        .setAccentColor(accent(config))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 🚀 Deploy Panel'))
+        .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+            `**Current panel:** ${config.panelChannelId ? `<#${config.panelChannelId}>` : 'not deployed'}\n\n` +
+            'Select the channel that should receive the converter panel, then confirm.',
+        ))
+        .addActionRowComponents(channelSelectRow('setup:deploy:select', 'Select the panel destination channel'));
+    return { flags: PANEL_FLAGS | MessageFlags.Ephemeral, components: [container] };
+}
+
+// Deploy flow step 2: explicit confirmation before posting.
+function deployConfirmPayload(config, channelId) {
+    const container = new ContainerBuilder()
+        .setAccentColor(accent(config))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 🚀 Confirm Deploy'))
+        .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+            `**Destination:** <#${channelId}>\n` +
+            `**Current panel:** ${config.panelChannelId ? `<#${config.panelChannelId}>` : 'not deployed'}\n\n` +
+            (config.panelChannelId === channelId
+                ? 'This channel already holds the panel — the existing message will be updated in place.'
+                : 'A new panel will be posted. Any panel in another channel is left untouched.'),
+        ))
+        .addActionRowComponents(new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`setup:deploy:confirm:${channelId}`).setLabel('Confirm Deploy').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('setup:deploy:cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+        ));
+    return { flags: PANEL_FLAGS | MessageFlags.Ephemeral, components: [container] };
+}
+
+// Emoji settings dashboard with a live preview of the success layout.
+function emojiSettingsPayload(config, client, { preview = null } = {}) {
+    const current = { ...emoji.DEFAULTS, ...(config.emojis || {}), ...(preview || {}) };
+    const row = key => `${emoji.LABELS[key]}: ${emoji.render(client, { emojis: current }, key)}  \`${current[key]}\``;
+    const container = new ContainerBuilder()
+        .setAccentColor(accent(config))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 😀 Emoji Settings'))
+        .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+            emoji.KEYS.map(row).join('\n') + '\n\n' +
+            '**Preview**\n' +
+            `${emoji.render(client, { emojis: current }, 'title')} **Title:** \`Song\`\n\n` +
+            `${emoji.render(client, { emojis: current }, 'artist')} **Artist / Uploader:** \`Artist\`\n\n` +
+            `${emoji.render(client, { emojis: current }, 'duration')} **Duration:** \`03:12\`\n\n` +
+            `${emoji.render(client, { emojis: current }, 'size')} **Size:** \`4.20 MB\`\n\n` +
+            `${emoji.render(client, { emojis: current }, 'link')} **Direct Download Link:** [Top4Top Direct Link](http://top4top.io/example.mp3)\n\n` +
+            `${emoji.render(client, { emojis: current }, 'success')} **Upload Success**`,
+        ));
+
+    const buttons = emoji.KEYS.map(key => new ButtonBuilder()
+        .setCustomId(`setup:emoji:${key}`)
+        .setLabel(emoji.LABELS[key])
+        .setStyle(ButtonStyle.Secondary));
+
+    for (let i = 0; i < buttons.length; i += 5) {
+        container.addActionRowComponents(new ActionRowBuilder().addComponents(...buttons.slice(i, i + 5)));
+    }
+
+    container.addActionRowComponents(new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('setup:emoji:save').setLabel('Save').setStyle(ButtonStyle.Success).setDisabled(!preview),
+        new ButtonBuilder().setCustomId('setup:emoji:reset').setLabel('Reset to Default').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('setup:emoji:back').setLabel('Back').setStyle(ButtonStyle.Secondary),
+    ));
+
+    return { flags: PANEL_FLAGS | MessageFlags.Ephemeral, components: [container] };
+}
+
+function emojiModal(key) {
+    const modal = new ModalBuilder()
+        .setCustomId(`setup:emoji:modal:${key}`)
+        .setTitle(`Emoji: ${emoji.LABELS[key] || key}`);
+    modal.addComponents(new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+            .setCustomId('value')
+            .setLabel('Unicode emoji or <:name:id> / <a:name:id>')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(false)
+            .setMaxLength(64)
+            .setPlaceholder(`${emoji.DEFAULTS[key]}  or  <:name:123456789012345678>`),
+    ));
     return modal;
 }
 
@@ -241,4 +381,6 @@ module.exports = {
     PANEL_FLAGS, CATEGORIES, FIELD_LABELS, accent,
     buildPanel, panelPayload, infoPayload, dashboardPayload, fieldModal,
     notice, cookiesPayload,
+    historyChannelPayload, deploySelectPayload, deployConfirmPayload,
+    emojiSettingsPayload, emojiModal, channelSelectRow,
 };

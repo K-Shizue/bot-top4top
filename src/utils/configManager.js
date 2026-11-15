@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const emoji = require('./emoji');
 
 const DATA_DIR = path.join(__dirname, '..', '..', 'data');
 const CONFIG_PATH = path.join(DATA_DIR, 'guild-configs.json');
@@ -19,11 +20,16 @@ const DEFAULTS = Object.freeze({
     panelButtonStyle: 2,
     panelChannelId: null,
     panelMessageId: null,
+    historyChannelId: null,
+    emojis: { ...emoji.DEFAULTS },
 });
 
 const EDITABLE = ['title', 'description', 'bannerUrl', 'thumbnailUrl', 'accentColor', 'footerText',
     'convertButtonLabel', 'convertButtonEmoji', 'convertButtonStyle',
     'panelButtonLabel', 'panelButtonEmoji', 'panelButtonStyle'];
+
+// Emoji keys are edited through their own modal, so they are validated separately.
+const EMOJI_KEYS = emoji.KEYS;
 
 function readAll() {
     try {
@@ -89,7 +95,12 @@ function style(v, field) {
 
 function get(guildId) {
     const all = readAll();
-    return { ...DEFAULTS, ...(all[guildId] || {}) };
+    const stored = all[guildId] || {};
+    return {
+        ...DEFAULTS,
+        ...stored,
+        emojis: { ...emoji.DEFAULTS, ...(stored.emojis || {}) },
+    };
 }
 
 function set(guildId, patch) {
@@ -105,18 +116,44 @@ function set(guildId, patch) {
     return all[guildId];
 }
 
+// Partial emoji update; unknown keys are rejected so typos cannot silently persist.
+function setEmojis(guildId, patch) {
+    const clean = {};
+    for (const key of EMOJI_KEYS) {
+        if (patch[key] === undefined) continue;
+        clean[key] = emoji.normalizeValue(patch[key], key);
+    }
+    if (Object.keys(clean).length === 0) return get(guildId);
+    const all = readAll();
+    const current = all[guildId] || {};
+    all[guildId] = {
+        ...DEFAULTS,
+        ...current,
+        emojis: { ...emoji.DEFAULTS, ...(current.emojis || {}), ...clean },
+    };
+    writeAll(all);
+    return get(guildId);
+}
+
+function setHistoryChannel(guildId, channelId) {
+    const all = readAll();
+    all[guildId] = { ...DEFAULTS, ...(all[guildId] || {}), historyChannelId: channelId || null };
+    writeAll(all);
+    return get(guildId);
+}
+
 function setDeployment(guildId, channelId, messageId) {
     const all = readAll();
     all[guildId] = { ...DEFAULTS, ...(all[guildId] || {}), panelChannelId: channelId || null, panelMessageId: messageId || null };
     writeAll(all);
-    return all[guildId];
+    return get(guildId);
 }
 
 function reset(guildId) {
     const all = readAll();
     delete all[guildId];
     writeAll(all);
-    return { ...DEFAULTS };
+    return { ...DEFAULTS, emojis: { ...emoji.DEFAULTS } };
 }
 
-module.exports = { DEFAULTS, get, set, setDeployment, reset };
+module.exports = { DEFAULTS, EMOJI_KEYS, get, set, setEmojis, setHistoryChannel, setDeployment, reset };

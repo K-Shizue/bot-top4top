@@ -106,6 +106,8 @@ node index.js
   - Parameter `url` (String, required): Valid link from YouTube, TikTok, SoundCloud, or Spotify.
 - `/setup panel`
   - Opens the ephemeral configuration dashboard (requires **Manage Server**).
+- `/setup channel`
+  - Configures the channel that receives upload history messages (requires **Manage Server**).
 - `/setup cookies [file]`
   - Manages global `cookies.txt` (bot owner or IDs in `COOKIE_ADMIN_IDS`).
 
@@ -118,18 +120,148 @@ node index.js
 | Section | Fields |
 |---|---|
 | **General** | Title, description, footer text |
-| **Appearance** | Accent color (hex), button labels, button emojis, button styles (1-4) |
+| **Appearance** | Accent color (hex), button labels, button emojis, button styles (1-4), **Emoji Settings** |
 | **Images** | Banner URL, thumbnail URL |
-| **Panel Management** | Preview, Deploy / Update, Reset, yt-dlp status |
+| **Panel Management** | Preview, Deploy / Update, History Channel, Reset, yt-dlp status |
 
 - **Preview** renders the panel ephemerally without posting it.
-- **Deploy / Update** posts the panel to the current channel. The channel and message IDs are stored in `data/guild-configs.json`, so pressing it again edits the existing message instead of creating duplicates. If the message was deleted, a fresh panel is posted automatically.
+- **Deploy / Update** starts a three-step flow: pick a channel → confirm → post. The guild, channel, and message IDs are stored in `data/guild-configs.json`.
 - Configuration is per guild and persists across restarts.
 
 The public panel has two buttons:
 
 - **Convert** — opens a modal for a URL, then runs the same pipeline as `/upload`.
 - **Panel** — shows converter information, supported platforms, and usage.
+
+### Deploying the panel to a channel
+
+1. `/setup panel` → **Panel Management** → **Deploy / Update**.
+2. Choose the destination with the channel select menu.
+3. Review the confirmation and press **Confirm Deploy**.
+
+Behaviour:
+
+- Same channel as the stored panel → the existing message is edited in place (no duplicate).
+- Different channel → a new panel is posted; the old panel is left untouched. The stored IDs now point to the new panel.
+- Stored message deleted → a fresh panel is posted automatically.
+- The bot checks **View Channel** and **Send Messages** before posting; a failure returns an error instead of throwing.
+- **Cancel** returns to the dashboard.
+
+### Emoji Settings
+
+`/setup panel` → **Appearance** → **Emoji Settings** lets an administrator change the emoji used in upload messages without editing code:
+
+| Key | Default | Used in |
+|---|---|---|
+| Title | 🎵 | Success message |
+| Artist / Uploader | 👤 | Success message |
+| Duration | ⏱️ | Success message |
+| File Size | 📦 | Success message |
+| Direct Download Link | 🔗 | Success message |
+| Upload Success | ✅ | History channel message |
+
+- Accepts Unicode emoji, static custom `<:name:id>`, and animated custom `<a:name:id>`.
+- Pick an emoji button → paste the value → the dashboard shows a **Preview** before anything is saved.
+- **Save** persists to the guild config; **Reset to Default** restores the defaults.
+- Values are validated; invalid input is rejected. A custom emoji the bot cannot resolve (deleted or from another guild) renders as the Unicode fallback at send time.
+- Changes apply to the next upload immediately — no restart. Settings are stored per guild.
+
+## Upload History
+
+Every successful Top4Top upload is stored in `data/upload-history.json` and, when configured, posted once to the guild's history channel.
+
+Recorded fields:
+
+```json
+{
+  "id": "1794770953532-8tlddx",
+  "title": "Song",
+  "artist": "Artist",
+  "duration": 192,
+  "fileSize": 4404019,
+  "url": "http://top4top.io/p_xxx/file.mp3",
+  "userId": "111111111111111111",
+  "username": "user",
+  "guildId": "222222222222222222",
+  "uploadedAt": 1794770953532
+}
+```
+
+- Written only after the Top4Top upload succeeds; failed uploads are never recorded.
+- One record per upload, one history message per upload.
+- Writes are serialized and atomic (temp file + rename), so concurrent uploads cannot corrupt or drop records.
+- Corrupted history files are tolerated: the bot logs a warning and starts from an empty list rather than crashing.
+- The file is capped at the newest 20 000 records.
+- No tokens, cookies, or other secrets are stored.
+
+### `/setup channel`
+
+`/setup channel` opens the history channel dashboard:
+
+- **Channel select** — restricted to guild text/announcement channels.
+- **Save** — persists the selected channel for the guild.
+- **Update** — re-validates and re-applies the active channel (useful after permission changes).
+- **Disable** — clears the setting; uploads keep working without history messages.
+- Permission is checked before saving; a channel the bot cannot post in is rejected.
+
+History messages use Components V2:
+
+```
+### ✅ Song - Artist
+
+🔗 **Top4Top Direct Link:**
+http://top4top.io/p_xxx/file.mp3
+
+👤 **Uploaded by:** <@USER_ID>
+```
+
+- One message per upload for all users.
+- A missing channel, deleted channel, missing permission, or send failure is logged and does **not** affect the upload reply.
+- History is never replayed on restart.
+
+### Backup & restore
+
+The bot's persistent state is two files:
+
+| File | Contents |
+|---|---|
+| `data/guild-configs.json` | Panel, emoji, history channel, deployment config per guild |
+| `data/upload-history.json` | Upload history records |
+| `data/secure/cookies.txt` | Global cookies (sensitive) |
+
+Backup:
+
+```bash
+tar -czf keju-backup-$(date +%F).tar.gz data/guild-configs.json data/upload-history.json data/secure/cookies.txt
+```
+
+Restore (stop the bot first to avoid overlapping writes):
+
+```bash
+pm2 stop keju-bot
+tar -xzf keju-backup-YYYY-MM-DD.tar.gz
+pm2 start keju-bot
+```
+
+`data/upload-history.json` is git-ignored; keep backups outside the repository. Cookies are credentials — store backups encrypted and never commit them.
+
+## Audio Upload Success Message
+
+All conversion flows share `convertFlow.js`, so `/upload` and the panel **Convert** button render the same success layout:
+
+```
+🎵 Title: `Song`
+👤 Artist / Uploader: `Artist`
+⏱️ Duration: `03:12`
+📦 Size: `4.20 MB`
+🔗 Direct Download Link: [Top4Top Direct Link](http://top4top.io/...)
+Uploaded via Mila Bot
+```
+
+- Components V2 Container with the green success accent.
+- No thumbnail / MediaGallery.
+- No "Download Audio File" button — the clickable markdown link is the only download path.
+- The Top4Top HTTP normalization and MP3 192 kbps pipeline are unchanged.
 
 ## Global Cookies
 
@@ -164,13 +296,35 @@ Top4Top results are normalized to `http://` before being shown to users, because
 - Source URLs (YouTube, TikTok, SoundCloud, Spotify) and the upload request itself are unchanged.
 
 ## Streaming Presence
-
 Set `STREAMING_URL` in `.env` to a full `http(s)` URL (for example a Twitch or YouTube live channel). The bot then shows:
 
 > **Streaming** — Bot convert by KEJU
 
 - Applied on `ready` and re-applied on `shardResume` after a gateway reconnect.
 - If `STREAMING_URL` is missing or invalid, the bot logs a clear warning and keeps running without the streaming presence.
+
+## VPS Requirements
+
+No new environment variables are required. On the VPS:
+
+1. **Writable `data/` directory** — the bot writes `guild-configs.json`, `upload-history.json`, and `secure/cookies.txt`. Run with a user that owns the directory:
+   ```bash
+   mkdir -p data/secure
+   chown -R $(whoami) data
+   chmod 700 data/secure
+   ```
+2. **Persist `data/` across deploys** — keep it outside the git checkout or add it to your deploy exclusions, otherwise history and config are wiped on redeploy.
+3. **PM2** — run with a stable name and rely on restart to reload the process (config and history are read from disk, so no in-memory state must survive):
+   ```bash
+   pm2 start index.js --name keju-bot
+   pm2 save
+   ```
+4. **Discord permissions** for the bot in target channels:
+   - Send Messages, View Channel (panel deploy and history channel)
+   - Embed Links (informational)
+   - **Use External Emojis** — required when an administrator configures a custom emoji from another guild; without it, Discord strips the emoji from the message
+5. **`/setup` access** — requires the **Manage Server** permission. Cookies additionally require bot owner or `COOKIE_ADMIN_IDS`.
+
 
 
 
@@ -187,13 +341,17 @@ converter_t4top/
 ├── package.json          # Package manifest and runtime scripts
 ├── readme.md             # Technical documentation
 ├── data/
-│   ├── guild-configs.json  # Per-guild panel configuration
+│   ├── guild-configs.json  # Per-guild panel, emoji, history channel config
+│   ├── upload-history.json # Append-only upload history (git-ignored)
 │   └── secure/
 │       └── cookies.txt     # Global cookies (git-ignored, mode 0600)
 ├── test/
 │   ├── selfcheck.js        # Config, cookies format, validation assertions
 │   ├── payloadcheck.js     # Components V2 payload construction
-│   ├── interactioncheck.js # Button/select/modal routing with mocked interactions
+│   ├── interactioncheck.js # Button/select/modal/deploy/emoji routing
+│   ├── historycheck.js     # Upload history persistence + concurrency
+│   ├── emojicheck.js       # Emoji parse/validate/render + per-guild storage
+│   ├── successcheck.js     # Success layout + history channel delivery
 │   ├── convertcheck.js     # Shared conversion pipeline with stubbed downloader/uploader
 │   ├── convertmodalcheck.js # Panel Convert modal: single ack, V2 flags on every edit
 │   ├── updatecheck.js      # Top4Top HTTP normalization + streaming presence
@@ -201,7 +359,7 @@ converter_t4top/
 └── src/
     ├── commands/
     │   ├── upload.js     # /upload slash command
-    │   └── setup.js      # /setup panel | cookies
+    │   └── setup.js      # /setup panel | channel | cookies
     ├── handlers/
     │   └── interactionHandler.js  # Buttons, select menus, modals
     └── utils/
@@ -211,6 +369,9 @@ converter_t4top/
         ├── configManager.js  # Per-guild config persistence and validation
         ├── panelBuilder.js   # Components V2 panel, dashboard, modals
         ├── cookiesManager.js # cookies.txt storage, validation, auth probe
+        ├── emoji.js          # Emoji parsing, validation, Unicode fallback
+        ├── uploadHistory.js  # Serialized JSON upload history store
+        ├── historyChannel.js # History message builder + delivery
         ├── presence.js       # Streaming presence ("Bot convert by KEJU")
         └── ytdlpUpdater.js   # yt-dlp version detection and auto update
 ```

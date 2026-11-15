@@ -4,3 +4,4 @@ downloads/
 package-lock.json
 data/secure/
 cookies.txt
+data/upload-history.json

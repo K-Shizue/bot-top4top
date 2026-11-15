@@ -4,13 +4,13 @@ const {
     SeparatorBuilder,
     MediaGalleryBuilder,
     MediaGalleryItemBuilder,
-    ActionRowBuilder,
-    ButtonBuilder,
-    ButtonStyle,
     MessageFlags,
 } = require('discord.js');
 const MusicDownloader = require('../utils/downloader');
 const Top4TopUploader = require('../utils/uploader');
+const configManager = require('./configManager');
+const emoji = require('./emoji');
+const historyChannel = require('./historyChannel');
 
 const SUPPORTED = /^https?:\/\/([\w-]+\.)*(youtube\.com|youtu\.be|tiktok\.com|soundcloud\.com|spotify\.com)\//i;
 
@@ -40,9 +40,38 @@ function media(container, thumbnail, description) {
         .addSeparatorComponents(new SeparatorBuilder().setDivider(true));
 }
 
+function formatDuration(duration) {
+    const total = Number(duration) || 0;
+    const mins = Math.floor(total / 60);
+    const secs = Math.floor(total % 60);
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
+
+function formatSize(fileSize) {
+    const mb = (Number(fileSize) || 0) / (1024 * 1024);
+    return `${mb.toFixed(2)} MB`;
+}
+
+// Success layout is shared by the reply and the history channel.
+function successContainer({ title, artist, duration, fileSize, url }, e) {
+    return new ContainerBuilder()
+        .setAccentColor(0x2ecc71)
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
+            `${e('title')} **Title:** \`${title}\`\n\n` +
+            `${e('artist')} **Artist / Uploader:** \`${artist}\`\n\n` +
+            `${e('duration')} **Duration:** \`${formatDuration(duration)}\`\n\n` +
+            `${e('size')} **Size:** \`${formatSize(fileSize)}\`\n\n` +
+            `${e('link')} **Direct Download Link:** [Top4Top Direct Link](${url})\n\n` +
+            'Uploaded via Mila Bot',
+        ));
+}
+
 // Shared pipeline: /upload and the public panel Convert button both land here.
 async function runConversion(interaction, rawUrl, { accentColor = 0x3498db } = {}) {
     const url = validateUrl(rawUrl);
+    const guildId = interaction.guildId || null;
+    const config = guildId ? configManager.get(guildId) : null;
+    const e = key => emoji.render(interaction.client, config, key);
 
     const processing = new ContainerBuilder()
         .setAccentColor(accentColor)
@@ -57,20 +86,16 @@ async function runConversion(interaction, rawUrl, { accentColor = 0x3498db } = {
 
     const { filePath, title, duration, uploader, fileSize, thumbnail } = await MusicDownloader.downloadAudio(url);
 
-    const sizeMb = fileSize ? (fileSize / (1024 * 1024)).toFixed(2) : 0;
-    const sizeStr = sizeMb > 0 ? `${sizeMb} MB` : 'Unknown';
-    const durationStr = `${Math.floor(duration / 60)}:${(duration % 60).toString().padStart(2, '0')}`;
-
     const uploading = new ContainerBuilder()
         .setAccentColor(0xe67e22)
         .addTextDisplayComponents(new TextDisplayBuilder().setContent('## 📤 Uploading to Top4Top'))
         .addSeparatorComponents(new SeparatorBuilder().setDivider(true));
     media(uploading, thumbnail, `${title} - ${uploader}`);
     uploading.addTextDisplayComponents(new TextDisplayBuilder().setContent(
-        `**🎵 Title:** \`${title}\`\n` +
-        `**👤 Artist / Uploader:** \`${uploader}\`\n` +
-        `**⏱️ Duration:** \`${durationStr}\`\n` +
-        `**📦 File Size:** \`${sizeStr}\`\n\n` +
+        `${e('title')} **Title:** \`${title}\`\n` +
+        `${e('artist')} **Artist / Uploader:** \`${uploader}\`\n` +
+        `${e('duration')} **Duration:** \`${formatDuration(duration)}\`\n` +
+        `${e('size')} **File Size:** \`${formatSize(fileSize)}\`\n\n` +
         '🚀 **Status:** Converting to MP3 and uploading to Top4Top servers...',
     ));
     await interaction.editReply(v2([uploading]));
@@ -82,30 +107,20 @@ async function runConversion(interaction, rawUrl, { accentColor = 0x3498db } = {
         MusicDownloader.cleanupFile(filePath);
     }
 
-    const success = new ContainerBuilder()
-        .setAccentColor(0x2ecc71)
-        .addTextDisplayComponents(new TextDisplayBuilder().setContent('## ✅ Audio Upload Successful!'))
-        .addSeparatorComponents(new SeparatorBuilder().setDivider(true));
-    media(success, thumbnail, `${title} - ${uploader}`);
-    success
-        .addTextDisplayComponents(new TextDisplayBuilder().setContent(
-            `**🎵 Title:** \`${title}\`\n` +
-            `**👤 Artist / Uploader:** \`${uploader}\`\n` +
-            `**⏱️ Duration:** \`${durationStr}\`\n` +
-            `**📦 Size:** \`${sizeStr}\`\n\n` +
-            `🔗 **Direct Download Link:** [Top4Top Direct Link](${downloadLink})\n` +
-            '-# Uploaded via Top4Top Converter Bot • Components V2',
-        ))
-        .addSeparatorComponents(new SeparatorBuilder().setDivider(true))
-        .addActionRowComponents(new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setLabel('Download Audio File')
-                .setStyle(ButtonStyle.Link)
-                .setURL(downloadLink)
-                .setEmoji('🔗'),
-        ));
+    // Record before the final reply: the upload already succeeded, so history must not
+    // be lost just because the Discord reply fails. Both steps are best-effort.
+    await historyChannel.recordAndPost(interaction.client, {
+        title,
+        artist: uploader,
+        duration,
+        fileSize,
+        url: downloadLink,
+        userId: interaction.user?.id,
+        username: interaction.user?.username,
+        guildId,
+    }).catch(err => console.error(`[history] ${err.message}`));
 
-    await interaction.editReply(v2([success]));
+    await interaction.editReply(v2([successContainer({ title, artist: uploader, duration, fileSize, url: downloadLink }, e)]));
 }
 
 function errorPayload(message, accentColor = 0xe74c3c) {
@@ -118,4 +133,7 @@ function errorPayload(message, accentColor = 0xe74c3c) {
         ))]);
 }
 
-module.exports = { runConversion, validateUrl, errorPayload, SUPPORTED, v2 };
+module.exports = {
+    runConversion, validateUrl, errorPayload, SUPPORTED, v2,
+    successContainer, formatDuration, formatSize,
+};

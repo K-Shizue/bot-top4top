@@ -3,6 +3,16 @@ const fs = require('fs');
 const path = require('path');
 const { MessageFlags } = require('discord.js');
 
+// Isolate the history side-effect; successcheck.js covers it. Must be installed
+// before requiring the handler, because convertFlow captures the module at load.
+const historyPath = require.resolve('../src/utils/historyChannel');
+require.cache[historyPath] = {
+    id: historyPath,
+    filename: historyPath,
+    loaded: true,
+    exports: { recordAndPost: async () => ({ saved: true, posted: false }) },
+};
+
 const handler = require('../src/handlers/interactionHandler');
 const configManager = require('../src/utils/configManager');
 const MusicDownloader = require('../src/utils/downloader');
@@ -24,6 +34,7 @@ function mockModalInteraction(url) {
         customId: 'panel:convert:modal',
         isButton: () => false,
         isStringSelectMenu: () => false,
+        isChannelSelectMenu: () => false,
         isModalSubmit: () => true,
         fields: { getTextInputValue: () => url },
         deferReply: async opts => {

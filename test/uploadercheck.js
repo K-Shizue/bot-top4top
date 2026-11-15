@@ -47,6 +47,14 @@ const Top4TopUploader = require('../src/utils/uploader');
         },
     };
     delete require.cache[require.resolve('../src/utils/convertFlow')];
+    // Isolate the history side-effect; successcheck.js covers it.
+    const historyPath = require.resolve('../src/utils/historyChannel');
+    require.cache[historyPath] = {
+        id: historyPath,
+        filename: historyPath,
+        loaded: true,
+        exports: { recordAndPost: async () => ({ saved: true, posted: false }) },
+    };
     const flow = require('../src/utils/convertFlow');
 
     await flow.runConversion(interaction, 'https://youtu.be/abc');

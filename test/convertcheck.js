@@ -25,6 +25,15 @@ require.cache[uploaderPath] = {
     exports: { uploadFile: async () => 'https://top4top.io/p_test.mp3' },
 };
 
+// Keep the history side-effect out of this test; dedicated coverage lives in successcheck.js.
+const historyPath = require.resolve('../src/utils/historyChannel');
+require.cache[historyPath] = {
+    id: historyPath,
+    filename: historyPath,
+    loaded: true,
+    exports: { recordAndPost: async () => ({ saved: true, posted: false }) },
+};
+
 const { runConversion, errorPayload } = require('../src/utils/convertFlow');
 
 const V2 = MessageFlags.IsComponentsV2;

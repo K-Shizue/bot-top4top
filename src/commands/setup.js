@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
 const configManager = require('../utils/configManager');
-const { dashboardPayload, cookiesPayload, notice } = require('../utils/panelBuilder');
+const { dashboardPayload, cookiesPayload, notice, historyChannelPayload } = require('../utils/panelBuilder');
 const cookiesManager = require('../utils/cookiesManager');
 
 const EPHEMERAL_V2 = MessageFlags.IsComponentsV2 | MessageFlags.Ephemeral;
@@ -22,6 +22,9 @@ module.exports = {
         .addSubcommand(sub => sub
             .setName('panel')
             .setDescription('Open the panel configuration dashboard'))
+        .addSubcommand(sub => sub
+            .setName('channel')
+            .setDescription('Choose the channel that receives upload history messages'))
         .addSubcommand(sub => sub
             .setName('cookies')
             .setDescription('Manage global cookies.txt (bot owner / authorized admins)')
@@ -54,6 +57,10 @@ module.exports = {
 
         if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
             return interaction.reply(notice('## 🔒 Manage Server permission required', 0xe74c3c));
+        }
+
+        if (interaction.options.getSubcommand() === 'channel') {
+            return interaction.reply(historyChannelPayload(configManager.get(interaction.guildId)));
         }
 
         return interaction.reply(dashboardPayload(configManager.get(interaction.guildId), 'general'));
